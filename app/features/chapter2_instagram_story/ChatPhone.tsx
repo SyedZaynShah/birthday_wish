@@ -98,7 +98,7 @@ export default function ChatPhone({ progress, messages, username, dateLabel }: C
   );
   const showNotification = progress >= 1;
   const showCaption = progress >= 6;
-  const showTyping = progress >= 9;
+  const showTyping = progress >= 8.4 && progress < 9;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

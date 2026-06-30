@@ -3,6 +3,7 @@ export type Memory = {
   title: string;
   description: string;
   image: string;
+  special?: boolean;
 };
 
 /** Subtle heart-shaped constellation — the shape reveals itself slowly. */
@@ -40,10 +41,21 @@ export const memories: Memory[] = [
   },
   {
     id: 2,
-    title: "The Guessing Game",
-    description:
-      "Playful questions, clever answers, and that electric feeling when every reply made you want to keep talking.",
+    title: "The Gentleman Accord",
+    description: [
+      "Long before I fell in love with you, we made a strange little agreement.",
+      "The plan was simple.",
+      "Five years after graduation, we'd meet again.",
+      "Maybe on your birthday.",
+      "Maybe on mine.",
+      "Maybe somewhere neither of us had ever been before.",
+      "At the time, it was just an idea between two people talking about the future.",
+      "Looking back now, it became one of those memories that quietly stayed with me.",
+      "The Gentleman Accord wasn't really about five years.",
+      "It was about a promise that neither of us wanted to forget.",
+    ].join("\n"),
     image: "/images/humaima/02.jpg",
+    special: true,
   },
   {
     id: 3,

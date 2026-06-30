@@ -3,1122 +3,1240 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Line, Sparkles } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
-import { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useSectionVisible } from "@/src/hooks/useSectionVisible";
 
-// ==========================================
-// Math Point Sampling for Constellations
-// ==========================================
-
-interface Segment {
+type Segment = {
   start: [number, number];
   end: [number, number];
-}
+};
+
+type OrbitalStar = {
+  radius: number;
+  speed: number;
+  size: number;
+  phase: number;
+  y: number;
+};
 
 const LETTER_DEFS: Record<string, Segment[]> = {
   H: [
-    { start: [-0.35, -0.6], end: [-0.35, 0.6] },
-    { start: [0.35, -0.6], end: [0.35, 0.6] },
-    { start: [-0.35, 0.0], end: [0.35, 0.0] },
+    { start: [-0.34, -0.62], end: [-0.34, 0.62] },
+    { start: [0.34, -0.62], end: [0.34, 0.62] },
+    { start: [-0.34, 0.02], end: [0.34, 0.02] },
   ],
   U: [
-    { start: [-0.35, -0.4], end: [-0.35, 0.6] },
-    { start: [0.35, -0.4], end: [0.35, 0.6] },
-    { start: [-0.35, -0.6], end: [0.35, -0.6] },
-    { start: [-0.35, -0.4], end: [-0.35, -0.6] },
-    { start: [0.35, -0.4], end: [0.35, -0.6] },
+    { start: [-0.34, 0.62], end: [-0.34, -0.38] },
+    { start: [0.34, 0.62], end: [0.34, -0.38] },
+    { start: [-0.34, -0.58], end: [0.34, -0.58] },
   ],
   M: [
-    { start: [-0.45, -0.6], end: [-0.45, 0.6] },
-    { start: [-0.45, 0.6], end: [0.0, 0.0] },
-    { start: [0.0, 0.0], end: [0.45, 0.6] },
-    { start: [0.45, 0.6], end: [0.45, -0.6] },
+    { start: [-0.42, -0.62], end: [-0.42, 0.62] },
+    { start: [-0.42, 0.62], end: [0.0, 0.0] },
+    { start: [0.0, 0.0], end: [0.42, 0.62] },
+    { start: [0.42, 0.62], end: [0.42, -0.62] },
   ],
   A: [
-    { start: [-0.35, -0.6], end: [0.0, 0.6] },
-    { start: [0.0, 0.6], end: [0.35, -0.6] },
-    { start: [-0.18, -0.15], end: [0.18, -0.15] },
+    { start: [-0.36, -0.62], end: [0.0, 0.62] },
+    { start: [0.0, 0.62], end: [0.36, -0.62] },
+    { start: [-0.18, -0.08], end: [0.18, -0.08] },
   ],
   I: [
-    { start: [0.0, -0.6], end: [0.0, 0.6] },
-    { start: [-0.2, 0.6], end: [0.2, 0.6] },
-    { start: [-0.2, -0.6], end: [0.2, -0.6] },
+    { start: [0.0, -0.62], end: [0.0, 0.62] },
+    { start: [-0.22, 0.62], end: [0.22, 0.62] },
+    { start: [-0.22, -0.62], end: [0.22, -0.62] },
   ],
 };
 
-function sampleSegments(segments: Segment[], count: number): [number, number][] {
-  const lengths: number[] = [];
-  let totalLength = 0;
-  for (const seg of segments) {
-    const dx = seg.end[0] - seg.start[0];
-    const dy = seg.end[1] - seg.start[1];
-    const len = Math.sqrt(dx * dx + dy * dy);
-    lengths.push(len);
-    totalLength += len;
-  }
+const STORY_LINES = [
+  { id: "date", text: "July 1st", threshold: 17.6 },
+  { id: "bright", text: "A day the universe became brighter.", threshold: 18.8 },
+  { id: "arrived", text: "Because you arrived.", threshold: 20.0 },
+];
 
+const FINAL_LINES = [
+  { id: "birthday", text: "Happy Birthday", threshold: 21.8 },
+  { id: "name", text: "Humaima", threshold: 22.7 },
+  {
+    id: "story",
+    text: "For the girl who turned a random message into my favorite story.",
+    threshold: 23.9,
+  },
+  { id: "sparkle", text: "✨", threshold: 24.6 },
+  { id: "memory", text: "Every star ahead holds a memory.", threshold: 25.0 },
+];
+
+const FUTURE_STAR_COUNT = 8;
+const HERO_STAR_COUNT = 420;
+const HEART_LINE_POINTS = 120;
+const CTA_REVEAL_TIME = 25.8;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function mix(a: number, b: number, amount: number) {
+  return a + (b - a) * amount;
+}
+
+function sampleSegments(segments: Segment[], count: number) {
+  const lengths = segments.map((segment) =>
+    Math.hypot(segment.end[0] - segment.start[0], segment.end[1] - segment.start[1]),
+  );
+  const totalLength = lengths.reduce((sum, value) => sum + value, 0);
   const points: [number, number][] = [];
-  for (let i = 0; i < count; i++) {
-    const t = count > 1 ? i / (count - 1) : 0.5;
-    const targetDist = t * totalLength;
-    let accumulatedDist = 0;
 
-    for (let s = 0; s < segments.length; s++) {
-      const seg = segments[s];
-      const len = lengths[s];
-      if (accumulatedDist + len >= targetDist || s === segments.length - 1) {
-        const segT = len > 0 ? (targetDist - accumulatedDist) / len : 0;
-        const x = seg.start[0] + segT * (seg.end[0] - seg.start[0]);
-        const y = seg.start[1] + segT * (seg.end[1] - seg.start[1]);
-        points.push([x, y]);
+  for (let index = 0; index < count; index += 1) {
+    const targetDistance = totalLength * (count <= 1 ? 0.5 : index / (count - 1));
+    let walked = 0;
+
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+      const segment = segments[segmentIndex];
+      const length = lengths[segmentIndex];
+
+      if (walked + length >= targetDistance || segmentIndex === segments.length - 1) {
+        const progress = length === 0 ? 0 : (targetDistance - walked) / length;
+        points.push([
+          mix(segment.start[0], segment.end[0], progress),
+          mix(segment.start[1], segment.end[1], progress),
+        ]);
         break;
       }
-      accumulatedDist += len;
+
+      walked += length;
     }
   }
+
   return points;
 }
 
-function sampleHeart(count: number): [number, number][] {
-  const points: [number, number][] = [];
-  for (let i = 0; i < count; i++) {
-    const t = (i / count) * 2 * Math.PI;
-    const x = 16 * Math.pow(Math.sin(t), 3);
-    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-    points.push([x * 0.09, (y + 2.5) * 0.09]);
-  }
-  return points;
-}
+function createWordPoints(word: string, totalPoints: number) {
+  const letters = word.split("");
+  const spacing = 1.22;
+  const offsetX = -((letters.length - 1) * spacing) / 2;
+  const perLetter = Math.max(12, Math.floor(totalPoints / letters.length));
+  const points: THREE.Vector3[] = [];
 
-// ==========================================
-// GLSL Shaders Definitions
-// ==========================================
-
-const StarsShader = {
-  vertexShader: `
-    uniform float uTime;
-    uniform float uWeightName;
-    uniform float uWeightHeart;
-    
-    attribute float aSize;
-    attribute float aTwinkleSpeed;
-    attribute float aTimeOffset;
-    attribute vec3 aTargetName;
-    attribute vec3 aTargetHeart;
-    
-    varying float vOpacity;
-    
-    void main() {
-      vec3 pos = position;
-      
-      // Blend configurations
-      pos = mix(pos, aTargetName, uWeightName);
-      pos = mix(pos, aTargetHeart, uWeightHeart);
-      
-      // Twinkle logic with larger amplitude
-      float twinkle = 0.3 + 0.7 * sin(uTime * aTwinkleSpeed + aTimeOffset * 100.0);
-      
-      // Creation sequence fade-in
-      float opacity = 0.0;
-      if (uTime > 25.0) {
-        opacity = 1.0;
-      } else if (aTimeOffset == 0.0) {
-        opacity = clamp(uTime - 0.8, 0.0, 1.0);
-      } else {
-        float fadeStart = 1.2 + aTimeOffset * 1.8;
-        opacity = clamp((uTime - fadeStart) * 2.0, 0.0, 1.0);
-      }
-      
-      vOpacity = opacity * twinkle;
-      
-      vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-      gl_Position = projectionMatrix * mvPosition;
-      
-      // Size attenuation
-      gl_PointSize = aSize * (350.0 / -mvPosition.z);
-    }
-  `,
-  fragmentShader: `
-    varying float vOpacity;
-    void main() {
-      vec2 temp = gl_PointCoord - vec2(0.5);
-      float dist = dot(temp, temp);
-      if (dist > 0.25) discard;
-      float alpha = smoothstep(0.25, 0.0, dist) * vOpacity;
-      gl_FragColor = vec4(0.92, 0.97, 1.0, alpha);
-    }
-  `
-};
-
-const NebulaShader = {
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform float uTime;
-    uniform float uVisibility;
-    varying vec2 vUv;
-    
-    float hash(vec2 p) {
-      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-    }
-    
-    float noise(in vec2 p) {
-      vec2 i = floor(p);
-      vec2 f = fract(p);
-      vec2 u = f*f*(3.0-2.0*f);
-      return mix(mix(hash(i + vec2(0.0,0.0)), hash(i + vec2(1.0,0.0)), u.x),
-                 mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);
-    }
-    
-    float fbm(vec2 p) {
-      float v = 0.0;
-      float a = 0.5;
-      for (int i = 0; i < 3; ++i) {
-        v += a * noise(p);
-        p = p * 2.0;
-        a *= 0.5;
-      }
-      return v;
-    }
-    
-    void main() {
-      vec2 uv = vUv - vec2(0.5);
-      float n1 = fbm(uv * 1.2 + vec2(uTime * 0.015, uTime * 0.008));
-      float n2 = fbm(uv * 2.2 - vec2(uTime * 0.01, -uTime * 0.015));
-      
-      vec3 col1 = vec3(0.015, 0.005, 0.04); 
-      vec3 col2 = vec3(0.005, 0.012, 0.045); 
-      vec3 highlight = vec3(0.14, 0.05, 0.25); 
-      vec3 cyanDust = vec3(0.03, 0.15, 0.25);
-      
-      vec3 baseColor = mix(col1, col2, n1);
-      vec3 finalColor = mix(baseColor, highlight, n2 * 0.45);
-      finalColor = mix(finalColor, cyanDust, n1 * n2 * 0.35);
-      
-      float dist = length(uv);
-      float vignette = smoothstep(0.7, 0.15, dist);
-      
-      gl_FragColor = vec4(finalColor, uVisibility * vignette * 0.65);
-    }
-  `
-};
-
-const MoonShader = {
-  vertexShader: `
-    varying vec3 vNormal;
-    varying vec3 vPosition;
-    varying vec3 vViewPosition;
-    void main() {
-      vNormal = normalize(normalMatrix * normal);
-      vPosition = position;
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      vViewPosition = -mvPosition.xyz;
-      gl_Position = projectionMatrix * mvPosition;
-    }
-  `,
-  fragmentShader: `
-    uniform float uTime;
-    uniform float uVisibility;
-    uniform float uHeartbeat;
-    uniform vec3 uLightDirection;
-    
-    varying vec3 vNormal;
-    varying vec3 vPosition;
-    varying vec3 vViewPosition;
-    
-    float hash(vec3 p) {
-      p = fract(p * 0.3183099 + .1);
-      p *= 17.0;
-      return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-    }
-    
-    float noise(in vec3 x) {
-      vec3 i = floor(x);
-      vec3 f = fract(x);
-      f = f*f*(3.0-2.0*f);
-      return mix(mix(mix(hash(i+vec3(0,0,0)), hash(i+vec3(1,0,0)),f.x),
-                     mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)),f.x),f.y),
-                 mix(mix(hash(i+vec3(0,0,1)), hash(i+vec3(1,0,1)),f.x),
-                     mix(hash(i+vec3(0,1,1)), hash(i+vec3(1,1,1)),f.x),f.y),f.z);
-    }
-    
-    float fbm(vec3 p) {
-      float v = 0.0;
-      float a = 0.5;
-      vec3 shift = vec3(100.0);
-      for (int i = 0; i < 4; ++i) {
-        v += a * noise(p);
-        p = p * 2.0 + shift;
-        a *= 0.5;
-      }
-      return v;
-    }
-    
-    void main() {
-      vec3 normal = normalize(vNormal);
-      vec3 viewDir = normalize(vViewPosition);
-      
-      vec3 p = vPosition * 2.2;
-      float n = fbm(p);
-      
-      vec3 darkArea = vec3(0.02, 0.05, 0.12);   
-      vec3 lightArea = vec3(0.12, 0.18, 0.32);  
-      
-      vec3 surfaceColor = mix(darkArea, lightArea, smoothstep(0.3, 0.7, n));
-      
-      float craters = fbm(p * 6.0 + 5.0);
-      surfaceColor += vec3(craters * 0.06);
-      
-      float diffuse = max(dot(normal, normalize(uLightDirection)), 0.0);
-      diffuse = 0.15 + 0.85 * diffuse; 
-      
-      float rim = pow(1.0 - dot(normal, viewDir), 3.0);
-      vec3 rimGlow = vec3(0.28, 0.78, 1.0) * rim * 0.75 * uHeartbeat;
-      
-      vec3 finalColor = surfaceColor * diffuse + rimGlow;
-      
-      gl_FragColor = vec4(finalColor, uVisibility);
-    }
-  `
-};
-
-const MoonGlowShader = {
-  vertexShader: `
-    varying vec3 vNormal;
-    varying vec3 vViewPosition;
-    void main() {
-      vNormal = normalize(normalMatrix * normal);
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      vViewPosition = -mvPosition.xyz;
-      gl_Position = projectionMatrix * mvPosition;
-    }
-  `,
-  fragmentShader: `
-    varying vec3 vNormal;
-    varying vec3 vViewPosition;
-    uniform vec3 uGlowColor;
-    uniform float uVisibility;
-    uniform float uHeartbeat;
-    
-    void main() {
-      vec3 normal = normalize(vNormal);
-      vec3 viewDir = normalize(vViewPosition);
-      
-      float intensity = pow(0.7 - dot(normal, viewDir), 3.5);
-      float glow = intensity * uVisibility * (0.8 + 0.2 * uHeartbeat);
-      
-      gl_FragColor = vec4(uGlowColor, glow * 1.25);
-    }
-  `
-};
-
-// ==========================================
-// R3F Components
-// ==========================================
-
-function CameraRig({
-  elapsedTimeRef,
-  isTransitioning,
-  isSkipped,
-  onTransitionComplete
-}: {
-  elapsedTimeRef: React.MutableRefObject<number>;
-  isTransitioning: boolean;
-  isSkipped: boolean;
-  onTransitionComplete: () => void;
-}) {
-  const { camera } = useThree();
-  const transitionProgress = useRef(0);
-
-  useFrame((_, delta) => {
-    const t = elapsedTimeRef.current;
-
-    if (isTransitioning) {
-      transitionProgress.current += delta;
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, -15.0, 0.08);
-
-      if (camera.position.z < -10.0) {
-        onTransitionComplete();
-      }
-    } else {
-      const driftX = Math.sin(t * 0.15) * 0.35;
-      const driftY = Math.cos(t * 0.12) * 0.15;
-
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, driftX, 0.05);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.4 + driftY, 0.05);
-
-      if (isSkipped) {
-        camera.position.z = THREE.MathUtils.lerp(camera.position.z, 6.5, 0.05);
-      } else {
-        const targetZ = t < 5.0 ? 7.8 : 6.5;
-        camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, 0.03);
-      }
-
-      camera.lookAt(0, 0, 0);
-    }
+  letters.forEach((letter, letterIndex) => {
+    const segments = LETTER_DEFS[letter];
+    const sampled = sampleSegments(segments, perLetter);
+    sampled.forEach(([x, y], pointIndex) => {
+      const depth = Math.sin(pointIndex * 0.8 + letterIndex) * 0.08;
+      points.push(
+        new THREE.Vector3(offsetX + letterIndex * spacing + x, y * 1.08, depth),
+      );
+    });
   });
 
-  return null;
+  while (points.length < totalPoints) {
+    points.push(points[points.length % Math.max(1, points.length)].clone());
+  }
+
+  return points.slice(0, totalPoints);
 }
 
-function NebulaBackground({ elapsedTimeRef }: { elapsedTimeRef: React.MutableRefObject<number> }) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  
-  const uniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uVisibility: { value: 0 }
-  }), []);
+function createHeartPoints(totalPoints: number) {
+  const points: THREE.Vector3[] = [];
 
-  useFrame(() => {
-    const t = elapsedTimeRef.current;
-    uniforms.uTime.value = t;
+  for (let index = 0; index < totalPoints; index += 1) {
+    const t = (index / totalPoints) * Math.PI * 2;
+    const x = 16 * Math.sin(t) ** 3;
+    const y =
+      13 * Math.cos(t) -
+      5 * Math.cos(2 * t) -
+      2 * Math.cos(3 * t) -
+      Math.cos(4 * t);
 
-    let visibility = 0;
-    if (t >= 5.0 && t < 10.0) {
-      visibility = (t - 5.0) / 5.0 * 0.4;
-    } else if (t >= 10.0) {
-      visibility = 0.8;
+    points.push(
+      new THREE.Vector3(
+        x * 0.12,
+        (y + 2.8) * 0.12,
+        Math.sin(t * 3) * 0.15,
+      ),
+    );
+  }
+
+  return points;
+}
+
+function createStarPositions(count: number, spread: THREE.Vector3, depthOffset = 0) {
+  const positions = new Float32Array(count * 3);
+
+  for (let index = 0; index < count; index += 1) {
+    const i = index * 3;
+    positions[i] = (Math.random() - 0.5) * spread.x;
+    positions[i + 1] = (Math.random() - 0.5) * spread.y;
+    positions[i + 2] = (Math.random() - 0.5) * spread.z + depthOffset;
+  }
+
+  return positions;
+}
+
+function createMoonTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 1024;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return null;
+  }
+
+  const gradient = context.createRadialGradient(520, 420, 120, 512, 512, 480);
+  gradient.addColorStop(0, "#f2f7ff");
+  gradient.addColorStop(0.28, "#cbd7f7");
+  gradient.addColorStop(0.62, "#7b8eb9");
+  gradient.addColorStop(1, "#293552");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let layer = 0; layer < 520; layer += 1) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    const radius = 12 + Math.random() * 80;
+    const alpha = 0.018 + Math.random() * 0.055;
+    const crater = context.createRadialGradient(x, y, radius * 0.12, x, y, radius);
+    crater.addColorStop(0, `rgba(15,23,42,${alpha * 2.5})`);
+    crater.addColorStop(0.55, `rgba(56,72,112,${alpha})`);
+    crater.addColorStop(1, "rgba(255,255,255,0)");
+    context.fillStyle = crater;
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  for (let dust = 0; dust < 850; dust += 1) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    const radius = Math.random() * 2.2;
+    context.fillStyle = `rgba(255,255,255,${0.015 + Math.random() * 0.04})`;
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+function createNebulaTexture(colorA: string, colorB: string) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 768;
+  canvas.height = 768;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return null;
+  }
+
+  const gradient = context.createRadialGradient(384, 384, 100, 384, 384, 360);
+  gradient.addColorStop(0, colorA);
+  gradient.addColorStop(0.55, colorB);
+  gradient.addColorStop(1, "rgba(0,0,0,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let puff = 0; puff < 95; puff += 1) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    const radius = 38 + Math.random() * 115;
+    const alpha = 0.025 + Math.random() * 0.045;
+    const cloud = context.createRadialGradient(x, y, 0, x, y, radius);
+    cloud.addColorStop(0, `rgba(255,255,255,${alpha})`);
+    cloud.addColorStop(0.5, `rgba(170,200,255,${alpha * 0.65})`);
+    cloud.addColorStop(1, "rgba(0,0,0,0)");
+    context.fillStyle = cloud;
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function useAmbientSeeds() {
+  return useMemo(
+    () =>
+      Array.from({ length: 14 }, (_, index) => ({
+        id: index,
+        top: `${8 + ((index * 11) % 78)}%`,
+        left: `${4 + ((index * 17) % 88)}%`,
+        duration: 8 + index * 0.45,
+        delay: index * 0.16,
+      })),
+    [],
+  );
+}
+
+function StarLayer({
+  count,
+  size,
+  color,
+  elapsedRef,
+  start,
+  end,
+  spread,
+  depthOffset,
+  speed,
+}: {
+  count: number;
+  size: number;
+  color: string;
+  elapsedRef: React.MutableRefObject<number>;
+  start: number;
+  end: number;
+  spread: THREE.Vector3;
+  depthOffset?: number;
+  speed: number;
+}) {
+  const positions = useMemo(
+    () => createStarPositions(count, spread, depthOffset),
+    [count, spread, depthOffset],
+  );
+  const materialRef = useRef<THREE.PointsMaterial>(null);
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame((state) => {
+    const elapsed = elapsedRef.current;
+    const opacity = smoothstep(start, end, elapsed);
+
+    if (materialRef.current) {
+      materialRef.current.opacity = opacity * (0.55 + Math.sin(state.clock.elapsedTime * speed) * 0.05);
     }
-    uniforms.uVisibility.value = visibility;
+
+    if (groupRef.current) {
+      groupRef.current.rotation.y = state.clock.elapsedTime * speed * 0.02;
+      groupRef.current.rotation.x = Math.sin(state.clock.elapsedTime * speed * 0.1) * 0.03;
+    }
   });
 
   return (
-    <mesh ref={meshRef} position={[0, 0, -10]}>
-      <planeGeometry args={[30, 20]} />
-      <shaderMaterial
-        attach="material"
-        uniforms={uniforms}
-        vertexShader={NebulaShader.vertexShader}
-        fragmentShader={NebulaShader.fragmentShader}
+    <group ref={groupRef}>
+      <points frustumCulled={false}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[positions, 3]}
+            count={positions.length / 3}
+            array={positions}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={materialRef}
+          color={color}
+          size={size}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+    </group>
+  );
+}
+
+function NebulaLayer({
+  texture,
+  position,
+  rotation,
+  scale,
+  elapsedRef,
+  revealStart,
+  revealEnd,
+  drift,
+}: {
+  texture: THREE.Texture | null;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+  elapsedRef: React.MutableRefObject<number>;
+  revealStart: number;
+  revealEnd: number;
+  drift: number;
+}) {
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const elapsed = elapsedRef.current;
+    const visibility = smoothstep(revealStart, revealEnd, elapsed) * 0.58;
+
+    if (materialRef.current) {
+      materialRef.current.opacity = visibility;
+    }
+
+    if (meshRef.current) {
+      meshRef.current.rotation.z = rotation[2] + Math.sin(state.clock.elapsedTime * 0.1 + drift) * 0.08;
+      meshRef.current.position.x = position[0] + Math.sin(state.clock.elapsedTime * 0.08 + drift) * 0.5;
+      meshRef.current.position.y = position[1] + Math.cos(state.clock.elapsedTime * 0.06 + drift) * 0.35;
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={position} rotation={rotation} scale={scale}>
+      <planeGeometry args={[1, 1, 1, 1]} />
+      <meshBasicMaterial
+        ref={materialRef}
+        map={texture ?? undefined}
+        color="#9fb7ff"
         transparent
+        opacity={0}
         depthWrite={false}
+        blending={THREE.AdditiveBlending}
       />
     </mesh>
   );
 }
 
-function StarConstellation({ elapsedTimeRef, isSkipped }: { elapsedTimeRef: React.MutableRefObject<number>; isSkipped: boolean }) {
+function HeroConstellation({ elapsedRef }: { elapsedRef: React.MutableRefObject<number> }) {
   const pointsRef = useRef<THREE.Points>(null);
+  const materialRef = useRef<THREE.PointsMaterial>(null);
+  const positions = useMemo(() => new Float32Array(HERO_STAR_COUNT * 3), []);
+  const base = useMemo(
+    () => createStarPositions(HERO_STAR_COUNT, new THREE.Vector3(16, 9.5, 10), -1.5),
+    [],
+  );
+  const nameTargets = useMemo(() => createWordPoints("HUMAIMA", HERO_STAR_COUNT), []);
+  const heartTargets = useMemo(() => createHeartPoints(HERO_STAR_COUNT), []);
+  const heartLine = useMemo(
+    () => createHeartPoints(HEART_LINE_POINTS).map((point) => [point.x, point.y, point.z] as [number, number, number]),
+    [],
+  );
+  const lineRef = useRef<THREE.Group>(null);
 
-  // Denser starfield
-  const count = 1800;
+  useEffect(() => {
+    positions.set(base);
+  }, [base, positions]);
 
-  const basePositions = useMemo(() => {
-    const arr = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      arr[i * 3] = (Math.random() - 0.5) * 26;
-      arr[i * 3 + 1] = (Math.random() - 0.5) * 18;
-      arr[i * 3 + 2] = (Math.random() - 0.5) * 10 - 5;
-    }
-    return arr;
-  }, []);
+  useFrame((state) => {
+    const elapsed = elapsedRef.current;
+    const nameIn = smoothstep(10.7, 13.2, elapsed);
+    const nameOut = smoothstep(14.2, 15.4, elapsed);
+    const nameWeight = nameIn * (1 - nameOut);
+    const heartWeight = smoothstep(15.4, 18.4, elapsed);
+    const heroVisibility = smoothstep(2.4, 5.6, elapsed);
 
-  const targetNamePositions = useMemo(() => {
-    const arr = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      arr[i * 3] = basePositions[i * 3];
-      arr[i * 3 + 1] = basePositions[i * 3 + 1];
-      arr[i * 3 + 2] = basePositions[i * 3 + 2];
-    }
+    for (let index = 0; index < HERO_STAR_COUNT; index += 1) {
+      const i = index * 3;
+      const baseX = base[i];
+      const baseY = base[i + 1];
+      const baseZ = base[i + 2];
+      const name = nameTargets[index];
+      const heart = heartTargets[index];
 
-    const charSpacing = 1.05;
-    const chars = ["H", "U", "M", "A", "I", "M", "A"];
-    const starsPerChar = 100;
+      let x = mix(baseX, name.x, nameWeight);
+      let y = mix(baseY, name.y, nameWeight);
+      let z = mix(baseZ, name.z, nameWeight);
 
-    chars.forEach((char, charIdx) => {
-      const segments = LETTER_DEFS[char];
-      const xCenter = (charIdx - 3) * charSpacing;
-      const pts = sampleSegments(segments, starsPerChar);
+      x = mix(x, heart.x, heartWeight);
+      y = mix(y, heart.y, heartWeight);
+      z = mix(z, heart.z, heartWeight);
 
-      pts.forEach((pt, ptIdx) => {
-        const starIdx = charIdx * starsPerChar + ptIdx;
-        if (starIdx < count) {
-          arr[starIdx * 3] = xCenter + pt[0];
-          arr[starIdx * 3 + 1] = pt[1] + 0.3;
-          arr[starIdx * 3 + 2] = (Math.random() - 0.5) * 0.15;
-        }
-      });
-    });
+      const drift = Math.sin(state.clock.elapsedTime * 0.45 + index * 0.37) * 0.028;
+      const bob = Math.cos(state.clock.elapsedTime * 0.32 + index * 0.22) * 0.026;
 
-    return arr;
-  }, [basePositions]);
-
-  const targetHeartPositions = useMemo(() => {
-    const arr = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      arr[i * 3] = basePositions[i * 3];
-      arr[i * 3 + 1] = basePositions[i * 3 + 1];
-      arr[i * 3 + 2] = basePositions[i * 3 + 2];
+      positions[i] = x + drift * (1 - heartWeight * 0.45);
+      positions[i + 1] = y + bob * (1 - heartWeight * 0.35);
+      positions[i + 2] = z + Math.sin(state.clock.elapsedTime * 0.25 + index) * 0.02;
     }
 
-    const starsCount = 500;
-    const pts = sampleHeart(starsCount);
-
-    pts.forEach((pt, ptIdx) => {
-      const starIdx = ptIdx;
-      if (starIdx < count) {
-        arr[starIdx * 3] = pt[0];
-        arr[starIdx * 3 + 1] = pt[1] + 0.2;
-        arr[starIdx * 3 + 2] = (Math.random() - 0.5) * 0.15;
-      }
-    });
-
-    return arr;
-  }, [basePositions]);
-
-  const aSize = useMemo(() => {
-    const arr = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      if (i === 0) arr[i] = 5.5; // Majestic single star
-      else arr[i] = 1.2 + Math.random() * 2.8; // Larger, clearer stars
+    if (pointsRef.current) {
+      const attribute = pointsRef.current.geometry.attributes.position;
+      attribute.needsUpdate = true;
     }
-    return arr;
-  }, []);
 
-  const aTwinkleSpeed = useMemo(() => {
-    const arr = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      if (i === 0) arr[i] = 3.2;
-      else arr[i] = 1.2 + Math.random() * 2.2;
+    if (materialRef.current) {
+      materialRef.current.opacity = heroVisibility * (0.72 + Math.sin(state.clock.elapsedTime * 1.1) * 0.08);
     }
-    return arr;
-  }, []);
 
-  const aTimeOffset = useMemo(() => {
-    const arr = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      if (i === 0) arr[i] = 0.0;
-      else arr[i] = Math.random();
+    if (lineRef.current) {
+      lineRef.current.visible = heartWeight > 0.02;
+      lineRef.current.scale.setScalar(0.96 + heartWeight * 0.05);
     }
-    return arr;
-  }, []);
-
-  const uniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uWeightName: { value: 0 },
-    uWeightHeart: { value: 0 }
-  }), []);
-
-  function getInterpolationWeight(t: number, start: number, peakStart: number, peakEnd: number, end: number) {
-    if (t < start || t > end) return 0;
-    if (t >= peakStart && t <= peakEnd) return 1;
-    if (t < peakStart) {
-      const ratio = (t - start) / (peakStart - start);
-      return ratio * ratio * (3 - 2 * ratio);
-    } else {
-      const ratio = (end - t) / (end - peakEnd);
-      return ratio * ratio * (3 - 2 * ratio);
-    }
-  }
-
-  useFrame(() => {
-    const t = elapsedTimeRef.current;
-    uniforms.uTime.value = t;
-
-    // Tightened Morphing Timings
-    const w_name = getInterpolationWeight(t, 7.5, 9.0, 10.5, 12.0);
-    const w_heart = getInterpolationWeight(t, 20.5, 21.8, 23.5, 25.0);
-
-    uniforms.uWeightName.value = w_name;
-    uniforms.uWeightHeart.value = w_heart;
   });
 
   return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          args={[basePositions, 3]}
+    <>
+      <points ref={pointsRef} frustumCulled={false}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[positions, 3]}
+            count={positions.length / 3}
+            array={positions}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={materialRef}
+          color="#ffffff"
+          size={0.14}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
         />
-        <bufferAttribute
-          attach="attributes-aTargetName"
-          args={[targetNamePositions, 3]}
+      </points>
+
+      <group ref={lineRef} visible={false}>
+        <Line
+          points={heartLine}
+          color="#8bd9ff"
+          lineWidth={1.4}
+          transparent
+          opacity={0.18}
         />
-        <bufferAttribute
-          attach="attributes-aTargetHeart"
-          args={[targetHeartPositions, 3]}
-        />
-        <bufferAttribute
-          attach="attributes-aSize"
-          args={[aSize, 1]}
-        />
-        <bufferAttribute
-          attach="attributes-aTwinkleSpeed"
-          args={[aTwinkleSpeed, 1]}
-        />
-        <bufferAttribute
-          attach="attributes-aTimeOffset"
-          args={[aTimeOffset, 1]}
-        />
-      </bufferGeometry>
-      <shaderMaterial
-        attach="material"
-        uniforms={uniforms}
-        vertexShader={StarsShader.vertexShader}
-        fragmentShader={StarsShader.fragmentShader}
-        transparent
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </points>
+      </group>
+    </>
   );
 }
 
-function ProceduralMoon({ elapsedTimeRef }: { elapsedTimeRef: React.MutableRefObject<number> }) {
+function MoonCluster({
+  elapsedRef,
+  isFlying,
+}: {
+  elapsedRef: React.MutableRefObject<number>;
+  isFlying: boolean;
+}) {
+  const texture = useMemo(() => createMoonTexture(), []);
+  const glowTexture = useMemo(
+    () => createNebulaTexture("rgba(196,228,255,0.95)", "rgba(103,143,255,0.2)"),
+    [],
+  );
   const moonRef = useRef<THREE.Group>(null);
-  
-  const moonUniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uVisibility: { value: 0 },
-    uHeartbeat: { value: 1.0 },
-    uLightDirection: { value: new THREE.Vector3(5, 5, 2) }
-  }), []);
+  const glowRef = useRef<THREE.MeshBasicMaterial>(null);
+  const shellRef = useRef<THREE.MeshBasicMaterial>(null);
+  const orbitalGroupRef = useRef<THREE.Group>(null);
+  const futureStars = useMemo<OrbitalStar[]>(
+    () =>
+      Array.from({ length: FUTURE_STAR_COUNT }, (_, index) => ({
+        radius: 2.2 + (index % 3) * 0.42,
+        speed: 0.18 + index * 0.015,
+        size: 0.04 + (index % 2) * 0.018,
+        phase: index * ((Math.PI * 2) / FUTURE_STAR_COUNT),
+        y: -0.62 + (index % 4) * 0.44,
+      })),
+    [],
+  );
 
-  const glowUniforms = useMemo(() => ({
-    uVisibility: { value: 0 },
-    uHeartbeat: { value: 1.0 },
-    uGlowColor: { value: new THREE.Color("#38bdf8") }
-  }), []);
-
-  useFrame((_, delta) => {
-    const t = elapsedTimeRef.current;
-    
-    // Heartbeat logic starting Scene 6/7 (17.5s+)
-    let heartbeat = 1.0;
-    if (t >= 17.5) {
-      const period = 1.3;
-      const pulseTime = ((t - 17.5) % period) / period;
-      if (pulseTime < 0.16) {
-        heartbeat = 1.0 + 0.085 * Math.sin((pulseTime / 0.16) * Math.PI);
-      } else if (pulseTime >= 0.20 && pulseTime < 0.36) {
-        heartbeat = 1.0 + 0.038 * Math.sin(((pulseTime - 0.20) / 0.16) * Math.PI);
-      }
-    }
+  useFrame((state) => {
+    const elapsed = elapsedRef.current;
+    const reveal = smoothstep(6.0, 9.4, elapsed);
+    const orchestra = smoothstep(19.0, 22.0, elapsed);
+    const glowPulse = 0.78 + Math.sin(state.clock.elapsedTime * 0.45) * 0.08;
 
     if (moonRef.current) {
-      // Tightened rise animation (5s to 7.5s)
-      let targetY = 0.2;
-      if (t < 5.0) {
-        targetY = -4.5;
-      } else if (t < 7.5) {
-        const ratio = (t - 5.0) / 2.5;
-        const smoothRatio = ratio * ratio * (3 - 2 * ratio);
-        targetY = -4.5 + 4.7 * smoothRatio;
-      }
-      moonRef.current.position.y = targetY;
-      moonRef.current.scale.setScalar(heartbeat);
-      moonRef.current.rotation.y = t * 0.02;
+      moonRef.current.visible = reveal > 0.01;
+      moonRef.current.position.set(
+        mix(5.8, 2.55, reveal),
+        mix(1.8, 1.05, reveal),
+        mix(-7.8, -4.8, reveal),
+      );
+      const scale = mix(0.22, isFlying ? 1.16 : 1, reveal);
+      moonRef.current.scale.setScalar(scale);
+      moonRef.current.rotation.y = state.clock.elapsedTime * 0.04;
+      moonRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.05) * 0.04;
     }
 
-    const moonVisibility = t < 5.0 ? 0 : t < 7.5 ? (t - 5.0) / 2.5 : 1.0;
-    
-    moonUniforms.uTime.value = t;
-    moonUniforms.uVisibility.value = moonVisibility;
-    moonUniforms.uHeartbeat.value = heartbeat;
+    if (glowRef.current) {
+      glowRef.current.opacity = reveal * (0.34 + orchestra * 0.15) * glowPulse;
+    }
 
-    glowUniforms.uVisibility.value = moonVisibility;
-    glowUniforms.uHeartbeat.value = heartbeat;
+    if (shellRef.current) {
+      shellRef.current.opacity = reveal * 0.2;
+    }
+
+    if (orbitalGroupRef.current) {
+      orbitalGroupRef.current.visible = orchestra > 0.05;
+      orbitalGroupRef.current.rotation.z = state.clock.elapsedTime * 0.08;
+    }
   });
 
   return (
-    <group ref={moonRef} position={[0, -4.5, -2.5]}>
+    <group ref={moonRef} visible={false}>
       <mesh>
-        <sphereGeometry args={[1.7, 64, 64]} />
-        <shaderMaterial
-          attach="material"
-          uniforms={moonUniforms}
-          vertexShader={MoonShader.vertexShader}
-          fragmentShader={MoonShader.fragmentShader}
-          transparent
+        <sphereGeometry args={[1.78, 64, 64]} />
+        <meshStandardMaterial
+          map={texture ?? undefined}
+          color="#d8e7ff"
+          emissive="#5baeff"
+          emissiveIntensity={0.18}
+          roughness={0.9}
+          metalness={0.05}
         />
       </mesh>
 
-      <mesh>
-        <sphereGeometry args={[1.88, 62, 62]} />
-        <shaderMaterial
-          attach="material"
-          uniforms={glowUniforms}
-          vertexShader={MoonGlowShader.vertexShader}
-          fragmentShader={MoonGlowShader.fragmentShader}
+      <mesh scale={1.06}>
+        <sphereGeometry args={[1.82, 48, 48]} />
+        <meshBasicMaterial
+          ref={shellRef}
+          color="#8cd4ff"
           transparent
+          opacity={0}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
         />
       </mesh>
+
+      <mesh scale={[5.7, 5.7, 1]}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          ref={glowRef}
+          map={glowTexture ?? undefined}
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      <group ref={orbitalGroupRef} visible={false}>
+        {futureStars.map((star, index) => (
+          <FutureStar key={index} config={star} />
+        ))}
+      </group>
     </group>
   );
 }
 
-function ShootingStars({ elapsedTimeRef }: { elapsedTimeRef: React.MutableRefObject<number> }) {
-  const [stars, setStars] = useState<any[]>([]);
+function FutureStar({ config }: { config: OrbitalStar }) {
+  const ref = useRef<THREE.Mesh>(null);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const t = elapsedTimeRef.current;
-      // Shooting stars starting Scene 6+ (17.5s+)
-      if (t >= 17.5 && Math.random() > 0.4) {
-        const id = Math.random();
-        const startX = -12 - Math.random() * 4;
-        const startY = 6 + Math.random() * 3;
-        const endX = startX + 16 + Math.random() * 5;
-        const endY = startY - 9 - Math.random() * 3;
-        const duration = 0.6 + Math.random() * 0.4;
-        setStars(prev => [...prev, { id, startX, startY, endX, endY, duration, time: 0 }]);
-      }
-    }, 1400);
+  useFrame((state) => {
+    if (!ref.current) return;
 
-    return () => clearInterval(interval);
-  }, []);
-
-  useFrame((_, delta) => {
-    setStars(prev =>
-      prev
-        .map(s => ({ ...s, time: s.time + delta }))
-        .filter(s => s.time < s.duration)
+    const angle = state.clock.elapsedTime * config.speed + config.phase;
+    ref.current.position.set(
+      Math.cos(angle) * config.radius,
+      config.y + Math.sin(angle * 1.3) * 0.12,
+      Math.sin(angle) * config.radius * 0.38,
     );
+    const pulse = 1 + Math.sin(state.clock.elapsedTime * 2 + config.phase) * 0.22;
+    ref.current.scale.setScalar(pulse);
   });
 
   return (
-    <group>
-      {stars.map(s => {
-        const progress = s.time / s.duration;
-        const x = s.startX + (s.endX - s.startX) * progress;
-        const y = s.startY + (s.endY - s.startY) * progress;
+    <mesh ref={ref}>
+      <sphereGeometry args={[config.size, 12, 12]} />
+      <meshBasicMaterial color="#f8fbff" />
+    </mesh>
+  );
+}
 
-        const points = [
-          new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(-(s.endX - s.startX) * 0.12, -(s.endY - s.startY) * 0.12, 0)
-        ];
+function ShootingStars({ elapsedRef }: { elapsedRef: React.MutableRefObject<number> }) {
+  const trails = useMemo(
+    () =>
+      Array.from({ length: 4 }, (_, index) => ({
+        offset: index * 1.7,
+        startX: 8 + index * 1.3,
+        startY: 2.6 - index * 0.6,
+        depth: -2 - index * 0.45,
+        speed: 0.42 + index * 0.04,
+      })),
+    [],
+  );
 
-        return (
-          <group key={s.id} position={[x, y, -5.5]}>
-            <Line
-              points={points}
-              color="#a5f3fc"
-              lineWidth={1.2}
-              transparent
-              opacity={Math.sin(progress * Math.PI) * 0.65}
-            />
-          </group>
-        );
-      })}
+  return (
+    <>
+      {trails.map((trail, index) => (
+        <ShootingStar key={index} trail={trail} elapsedRef={elapsedRef} />
+      ))}
+    </>
+  );
+}
+
+function ShootingStar({
+  trail,
+  elapsedRef,
+}: {
+  trail: {
+    offset: number;
+    startX: number;
+    startY: number;
+    depth: number;
+    speed: number;
+  };
+  elapsedRef: React.MutableRefObject<number>;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  useFrame((state) => {
+    const elapsed = elapsedRef.current;
+    const reveal = smoothstep(19.4, 21.8, elapsed);
+    const cycle = (state.clock.elapsedTime * trail.speed + trail.offset) % 5.5;
+    const progress = smoothstep(0.2, 1.55, cycle);
+    const active = reveal > 0.02 && cycle < 1.8;
+
+    if (groupRef.current) {
+      groupRef.current.visible = active;
+      groupRef.current.position.set(
+        mix(trail.startX, -6.8, progress),
+        mix(trail.startY, -2.5, progress),
+        trail.depth,
+      );
+      groupRef.current.rotation.z = -0.55;
+    }
+
+    if (materialRef.current) {
+      materialRef.current.opacity = active ? reveal * (1 - progress * 0.55) : 0;
+    }
+  });
+
+  return (
+    <group ref={groupRef} visible={false}>
+      <mesh>
+        <planeGeometry args={[1.2, 0.035]} />
+        <meshBasicMaterial
+          ref={materialRef}
+          color="#d9efff"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      <mesh position={[0.55, 0, 0]}>
+        <sphereGeometry args={[0.04, 10, 10]} />
+        <meshBasicMaterial color="#ffffff" />
+      </mesh>
     </group>
   );
 }
 
-function TimelineUpdater({
-  elapsedTimeRef,
-  isSkipped,
-  isTransitioning,
-  setScene
+function CameraRig({
+  elapsedRef,
+  flyThrough,
+  onFlyComplete,
 }: {
-  elapsedTimeRef: React.MutableRefObject<number>;
-  isSkipped: boolean;
-  isTransitioning: boolean;
-  setScene: React.Dispatch<React.SetStateAction<number>>;
+  elapsedRef: React.MutableRefObject<number>;
+  flyThrough: boolean;
+  onFlyComplete: () => void;
 }) {
-  const lastScene = useRef(1);
+  const { camera } = useThree();
+  const completedRef = useRef(false);
 
-  useFrame((_, delta) => {
-    if (isTransitioning) return;
+  useEffect(() => {
+    completedRef.current = false;
+  }, [flyThrough]);
 
-    if (isSkipped) {
-      elapsedTimeRef.current = Math.max(elapsedTimeRef.current, 25.0);
-    } else {
-      elapsedTimeRef.current += delta;
+  useFrame((state) => {
+    const elapsed = elapsedRef.current;
+    const baseDriftX = Math.sin(state.clock.elapsedTime * 0.18) * 0.35;
+    const baseDriftY = Math.cos(state.clock.elapsedTime * 0.12) * 0.22;
+    const reveal = smoothstep(6.0, 9.2, elapsed);
+
+    if (flyThrough) {
+      const progress = smoothstep(0, 1.9, state.clock.elapsedTime - elapsed + elapsedRef.current);
+      camera.position.x = mix(camera.position.x, 0.0, 0.08);
+      camera.position.y = mix(camera.position.y, 0.1, 0.08);
+      camera.position.z = mix(camera.position.z, -4.8, 0.06);
+      camera.lookAt(0, 0.1, -10);
+
+      if (!completedRef.current && camera.position.z < -4.15) {
+        completedRef.current = true;
+        onFlyComplete();
+      }
+
+      if (progress > 0.99 && !completedRef.current) {
+        completedRef.current = true;
+        onFlyComplete();
+      }
+      return;
     }
 
-    const t = elapsedTimeRef.current;
-
-    // Tighter Scene Thresholds
-    let scene = 1;
-    if (t >= 28.0) scene = 10;
-    else if (t >= 25.0) scene = 9;
-    else if (t >= 20.5) scene = 8;
-    else if (t >= 17.5) scene = 6; 
-    else if (t >= 12.0) scene = 5;
-    else if (t >= 7.5) scene = 4;
-    else if (t >= 5.0) scene = 3;
-    else if (t >= 3.0) scene = 2;
-
-    if (scene !== lastScene.current) {
-      lastScene.current = scene;
-      setScene(scene);
-    }
+    camera.position.x = mix(camera.position.x, baseDriftX - reveal * 0.7, 0.03);
+    camera.position.y = mix(camera.position.y, baseDriftY + reveal * 0.25, 0.03);
+    camera.position.z = mix(camera.position.z, 12.5 - reveal * 1.8, 0.03);
+    camera.lookAt(0, 0.2, -1.5);
   });
 
   return null;
 }
 
-function UniverseScene({
-  active,
-  elapsedTimeRef,
-  scene,
-  setScene,
-  isSkipped,
-  isTransitioning,
-  onTransitionComplete
+function IntroScene({
+  elapsedRef,
+  flyThrough,
+  onFlyComplete,
 }: {
-  active: boolean;
-  elapsedTimeRef: React.MutableRefObject<number>;
-  scene: number;
-  setScene: React.Dispatch<React.SetStateAction<number>>;
-  isSkipped: boolean;
-  isTransitioning: boolean;
-  onTransitionComplete: () => void;
+  elapsedRef: React.MutableRefObject<number>;
+  flyThrough: boolean;
+  onFlyComplete: () => void;
 }) {
-  if (!active) {
-    return <div className="absolute inset-0 bg-[#020617]" />;
-  }
+  const nebulaA = useMemo(
+    () => createNebulaTexture("rgba(164,214,255,0.65)", "rgba(47,76,163,0.08)"),
+    [],
+  );
+  const nebulaB = useMemo(
+    () => createNebulaTexture("rgba(255,207,162,0.52)", "rgba(108,91,255,0.08)"),
+    [],
+  );
+  const sparklesRef = useRef<THREE.Group>(null);
+
+  useFrame(() => {
+    const elapsed = elapsedRef.current;
+    if (sparklesRef.current) {
+      sparklesRef.current.visible = elapsed > 18.6;
+    }
+  });
 
   return (
-    <Canvas
-      camera={{ position: [0, 0.4, 7.8], fov: 45 }}
-      className="absolute inset-0 z-0"
-      dpr={[1, 1.25]}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
-    >
-      <color attach="background" args={["#020617"]} />
-      <ambientLight intensity={0.2} />
-      
-      <NebulaBackground elapsedTimeRef={elapsedTimeRef} />
+    <>
+      <color attach="background" args={["#02030a"]} />
+      <fog attach="fog" args={["#030610", 10, 28]} />
 
-      <StarConstellation elapsedTimeRef={elapsedTimeRef} isSkipped={isSkipped} />
+      <ambientLight intensity={0.26} />
+      <directionalLight position={[5, 4, 7]} intensity={1.05} color="#c9ddff" />
+      <pointLight position={[2.4, 1.8, -3.8]} intensity={1.8} color="#72d3ff" />
+      <pointLight position={[-5, 0, 3]} intensity={0.35} color="#6f8df6" />
 
-      {scene >= 6 && (
+      <StarLayer
+        count={260}
+        size={0.05}
+        color="#a8c8ff"
+        elapsedRef={elapsedRef}
+        start={2.8}
+        end={4.6}
+        spread={new THREE.Vector3(24, 15, 13)}
+        speed={0.8}
+      />
+      <StarLayer
+        count={420}
+        size={0.07}
+        color="#d9ebff"
+        elapsedRef={elapsedRef}
+        start={3.8}
+        end={5.8}
+        spread={new THREE.Vector3(21, 12, 15)}
+        depthOffset={-3}
+        speed={1.05}
+      />
+      <StarLayer
+        count={680}
+        size={0.03}
+        color="#f4f8ff"
+        elapsedRef={elapsedRef}
+        start={4.8}
+        end={7.0}
+        spread={new THREE.Vector3(32, 18, 24)}
+        depthOffset={-7}
+        speed={1.2}
+      />
+
+      <NebulaLayer
+        texture={nebulaA}
+        position={[-4.8, 1.2, -8.2]}
+        rotation={[0.08, 0.12, -0.28]}
+        scale={[12, 8.4, 1]}
+        elapsedRef={elapsedRef}
+        revealStart={5.2}
+        revealEnd={8.8}
+        drift={0.2}
+      />
+      <NebulaLayer
+        texture={nebulaB}
+        position={[5.6, -0.8, -9.5]}
+        rotation={[0.02, -0.1, 0.22]}
+        scale={[13.2, 9.2, 1]}
+        elapsedRef={elapsedRef}
+        revealStart={6.2}
+        revealEnd={10.2}
+        drift={1.1}
+      />
+
+      <HeroConstellation elapsedRef={elapsedRef} />
+      <MoonCluster elapsedRef={elapsedRef} isFlying={flyThrough} />
+      <ShootingStars elapsedRef={elapsedRef} />
+
+      <group ref={sparklesRef} visible={false}>
         <Sparkles
-          count={50} // Slightly more dust
-          size={2.2} // Larger particles
-          color="#38bdf8"
-          speed={0.4}
-          scale={[10, 7, 10]}
+          count={80}
+          size={5}
+          speed={0.22}
+          color="#d7f1ff"
+          scale={[18, 11, 10]}
+          opacity={0.34}
         />
-      )}
-
-      <ProceduralMoon elapsedTimeRef={elapsedTimeRef} />
-
-      <ShootingStars elapsedTimeRef={elapsedTimeRef} />
+      </group>
 
       <CameraRig
-        elapsedTimeRef={elapsedTimeRef}
-        isTransitioning={isTransitioning}
-        isSkipped={isSkipped}
-        onTransitionComplete={onTransitionComplete}
+        elapsedRef={elapsedRef}
+        flyThrough={flyThrough}
+        onFlyComplete={onFlyComplete}
       />
-
-      <TimelineUpdater
-        elapsedTimeRef={elapsedTimeRef}
-        isSkipped={isSkipped}
-        isTransitioning={isTransitioning}
-        setScene={setScene}
-      />
-    </Canvas>
+    </>
   );
 }
 
-// ==========================================
-// Main Component
-// ==========================================
+function MusicToggle({
+  visible,
+  enabled,
+  onClick,
+}: {
+  visible: boolean;
+  enabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      aria-label={enabled ? "Pause intro music" : "Play intro music"}
+      onClick={onClick}
+      className="pointer-events-auto rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-[11px] uppercase tracking-[0.32em] text-white/72 backdrop-blur-md transition hover:border-white/25 hover:text-white"
+      initial={{ opacity: 0, y: -10 }}
+      animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: -10 }}
+      transition={{ duration: 0.7, ease: "easeOut" }}
+    >
+      {enabled ? "Music On" : "Music Off"}
+    </motion.button>
+  );
+}
 
 export default function Chapter0() {
-  const [scene, setScene] = useState(1);
-  const [isSkipped, setIsSkipped] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [secretOpen, setSecretOpen] = useState(false);
-
-  const audioRef = useRef<HTMLAudioElement>(null);
   const sectionRef = useRef<HTMLElement | null>(null);
-  const elapsedTimeRef = useRef(0);
-
-  const { setRef: setVisibleRef, visible } = useSectionVisible("40% 0px", true);
+  const { setRef: setVisibleRef, visible } = useSectionVisible("20% 0px", true);
+  const elapsedRef = useRef(0);
+  const startTimeRef = useRef<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const flyCompleteRef = useRef(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [audioReady, setAudioReady] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [flyThrough, setFlyThrough] = useState(false);
+  const [secretRevealed, setSecretRevealed] = useState(false);
+  const ambientSeeds = useAmbientSeeds();
 
   const mergedRef = useCallback(
     (node: HTMLElement | null) => {
       sectionRef.current = node;
       setVisibleRef(node);
     },
-    [setVisibleRef]
+    [setVisibleRef],
   );
 
-  const handleSkip = () => {
-    setIsSkipped(true);
-    setScene(9);
-  };
+  useEffect(() => {
+    let cancelled = false;
 
-  const handleCTAStart = () => {
-    setIsTransitioning(true);
-  };
+    async function detectAudio() {
+      try {
+        const response = await fetch("/audio/intro-theme.mp3", { method: "HEAD" });
+        if (!cancelled && response.ok) {
+          const audio = new Audio("/audio/intro-theme.mp3");
+          audio.loop = true;
+          audio.volume = 0.45;
+          audio.preload = "none";
+          audioRef.current = audio;
+          setAudioReady(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setAudioReady(false);
+        }
+      }
+    }
 
-  const handleTransitionComplete = () => {
-    setIsTransitioning(false);
-    setIsSkipped(true);
-    document.getElementById("chapter-1")?.scrollIntoView({ behavior: "smooth" });
-  };
+    detectAudio();
 
-  const handleSecretPlay = () => {
-    audioRef.current?.play();
-  };
+    return () => {
+      cancelled = true;
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    if (startTimeRef.current === null) {
+      startTimeRef.current = performance.now();
+    }
+
+    let frameId = 0;
+    const update = () => {
+      const current = ((performance.now() - (startTimeRef.current ?? performance.now())) / 1000);
+      elapsedRef.current = current;
+      setElapsed(current);
+      frameId = window.requestAnimationFrame(update);
+    };
+
+    frameId = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [visible]);
+
+  useEffect(() => {
+    if (audioEnabled) {
+      audioRef.current?.play().catch(() => {
+        setAudioEnabled(false);
+      });
+      return;
+    }
+
+    audioRef.current?.pause();
+  }, [audioEnabled]);
+
+  const handleFollowTheStars = useCallback(() => {
+    if (flyThrough) return;
+    setFlyThrough(true);
+  }, [flyThrough]);
+
+  const handleFlyComplete = useCallback(() => {
+    if (flyCompleteRef.current) return;
+    flyCompleteRef.current = true;
+
+    window.setTimeout(() => {
+      document.getElementById("chapter-1")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 240);
+  }, []);
+
+  const allowText = elapsed > 17.2;
+  const showFinalReveal = elapsed > 21.6;
+  const showCTA = elapsed > CTA_REVEAL_TIME;
 
   return (
     <section
       ref={mergedRef}
       id="chapter-0"
-      className="relative min-h-screen w-full overflow-hidden select-none bg-[#020617]"
+      className="relative h-screen w-full overflow-hidden bg-[#02030a]"
     >
-      {/* R3F WebGL Scene */}
-      <UniverseScene
-        active={visible}
-        elapsedTimeRef={elapsedTimeRef}
-        scene={scene}
-        setScene={setScene}
-        isSkipped={isSkipped}
-        isTransitioning={isTransitioning}
-        onTransitionComplete={handleTransitionComplete}
-      />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(106,161,255,0.08)_0%,rgba(2,3,10,0.08)_32%,transparent_58%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_26%,rgba(126,214,255,0.12)_0%,transparent_28%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,3,10,0.98)_0%,rgba(2,3,10,0.7)_38%,rgba(2,3,10,0.86)_100%)]" />
 
-      {/* Text and Interactive Overlays */}
-      <div className="relative z-10 flex min-h-screen w-full items-center justify-center pointer-events-none">
-        <AnimatePresence mode="wait">
-          {/* Scene 4: Star spelling caption */}
-          {scene === 4 && (
-            <motion.p
-              key="scene4-text"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 0.65, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 1.2 }}
-              className="absolute text-sm sm:text-base md:text-lg tracking-[0.5em] font-light text-white/80 font-cinzel text-center px-4"
-            >
-              A NAME WRITTEN IN THE STARS...
-            </motion.p>
-          )}
-
-          {/* Scene 5: Sequenced Lines (Slightly larger, tighter intervals) */}
-          {scene === 5 && (
-            <motion.div
-              key="scene5-text"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="absolute flex flex-col items-center justify-center gap-8 text-center max-w-2xl px-6"
-            >
-              <motion.span
-                variants={{
-                  hidden: { opacity: 0, y: 12 },
-                  visible: { opacity: 0.95, y: 0, transition: { duration: 1.2, delay: 0.2 } },
-                  exit: { opacity: 0, y: -12, transition: { duration: 0.8 } }
-                }}
-                className="text-3xl sm:text-5xl md:text-6xl font-cinzel tracking-[0.4em] text-[#38bdf8]/90 font-semibold"
-              >
-                July 1st
-              </motion.span>
-              <motion.p
-                variants={{
-                  hidden: { opacity: 0, y: 12 },
-                  visible: { opacity: 0.85, y: 0, transition: { duration: 1.2, delay: 1.5 } },
-                  exit: { opacity: 0, y: -12, transition: { duration: 0.8 } }
-                }}
-                className="text-xl sm:text-2xl md:text-3xl font-cormorant tracking-wide text-white/80 italic font-light leading-relaxed"
-              >
-                A day the universe became brighter.
-              </motion.p>
-              <motion.p
-                variants={{
-                  hidden: { opacity: 0, y: 12 },
-                  visible: { opacity: 0.9, y: 0, transition: { duration: 1.2, delay: 3.0 } },
-                  exit: { opacity: 0, y: -12, transition: { duration: 0.8 } }
-                }}
-                className="text-xl sm:text-2xl md:text-3xl font-cormorant tracking-wide text-white/95 font-light leading-relaxed"
-              >
-                Because you arrived.
-              </motion.p>
-            </motion.div>
-          )}
-
-          {/* Scene 9 & 10: Happy Birthday & Story Intro (Grand cinematic font sizing) */}
-          {scene >= 9 && (
-            <motion.div
-              key="scene9-text"
-              initial={{ opacity: 0, y: 25 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1.4, ease: "easeOut" }}
-              className="absolute flex flex-col items-center gap-8 text-center max-w-3xl px-6 pointer-events-auto"
-            >
-              <motion.h1
-                initial={{ opacity: 0, scale: 0.97 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2, duration: 1.2 }}
-                className="text-4xl sm:text-6xl md:text-7xl font-cinzel tracking-[0.22em] font-bold text-white leading-tight"
-                style={{ textShadow: "0 0 50px rgba(56,189,248,0.25)" }}
-              >
-                HAPPY BIRTHDAY <br className="sm:hidden" />
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-[#a5f3fc] to-[#38bdf8]">
-                  HUMAIMA
-                </span>
-              </motion.h1>
-
-              <motion.p
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 0.85, y: 0 }}
-                transition={{ delay: 0.9, duration: 1.2 }}
-                className="text-lg sm:text-xl md:text-2xl font-cormorant tracking-widest text-white/85 font-light italic max-w-2xl leading-relaxed mt-2"
-              >
-                For the girl who turned a random message <br />
-                into my favorite story.
-              </motion.p>
-
-              {scene >= 10 && (
-                <motion.button
-                  key="cta-button"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 1.0 }}
-                  whileHover={{ scale: 1.03, boxShadow: "0 0 35px rgba(56,189,248,0.4)" }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleCTAStart}
-                  className="mt-8 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/40 px-12 py-4.5 text-[10px] font-inter uppercase tracking-[0.45em] text-white transition duration-500 cursor-pointer"
-                >
-                  ✨ Follow The Stars
-                </motion.button>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <div className="absolute inset-0">
+        {visible && (
+          <Canvas
+            camera={{ position: [0, 0, 12.5], fov: 45 }}
+            dpr={[1, 1.5]}
+            gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
+            className="h-full w-full"
+          >
+            <IntroScene
+              elapsedRef={elapsedRef}
+              flyThrough={flyThrough}
+              onFlyComplete={handleFlyComplete}
+            />
+          </Canvas>
+        )}
       </div>
 
-      {/* Ambient gradient layer */}
-      <div className="pointer-events-none absolute inset-0 z-5 bg-gradient-to-b from-transparent via-[#020617]/30 to-[#020617]" />
-
-      {/* Transition screen fade overlay */}
-      {isTransitioning && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1.8, ease: "easeInOut" }}
-          className="fixed inset-0 bg-[#020617] z-30 pointer-events-none"
-        />
-      )}
-
-      {/* Skip Intro Overlay */}
-      <AnimatePresence>
-        {scene < 9 && (
-          <motion.button
-            key="skip-button"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.35 }}
-            exit={{ opacity: 0 }}
-            whileHover={{ opacity: 0.85, scale: 1.02 }}
-            onClick={handleSkip}
-            className="absolute bottom-8 right-8 z-20 text-[9px] font-inter uppercase tracking-[0.25em] text-white border-b border-white/20 pb-0.5 transition cursor-pointer pointer-events-auto"
-          >
-            Skip Intro
-          </motion.button>
-        )}
-      </AnimatePresence>
-
-      {/* Secret Chapter Button */}
-      <AnimatePresence>
-        {scene >= 9 && (
-          <motion.button
-            key="secret-star"
-            type="button"
-            aria-label="Reveal the secret chapter"
-            onClick={() => setSecretOpen(true)}
-            className="absolute right-8 top-8 z-20 h-3 w-3 rounded-full bg-white/50 shadow-[0_0_12px_rgba(56,189,248,0.9)] cursor-pointer pointer-events-auto"
-            animate={{ scale: [1, 1.25, 1], opacity: [0.35, 0.75, 0.35] }}
+      <div className="pointer-events-none absolute inset-0">
+        {ambientSeeds.map((seed) => (
+          <motion.span
+            key={seed.id}
+            className="absolute h-1 w-1 rounded-full bg-white/70 shadow-[0_0_12px_rgba(141,219,255,0.55)]"
+            style={{ top: seed.top, left: seed.left }}
+            animate={{
+              opacity: elapsed > 18 ? [0.08, 0.55, 0.12] : [0, 0, 0],
+              y: elapsed > 18 ? [0, -14, 0] : 0,
+            }}
             transition={{
-              scale: { duration: 4, repeat: Infinity, ease: "easeInOut" },
-              opacity: { duration: 1.5 }
+              duration: seed.duration,
+              repeat: Infinity,
+              ease: "easeInOut",
+              delay: seed.delay,
             }}
           />
-        )}
-      </AnimatePresence>
+        ))}
+      </div>
 
-      {/* Secret Chapter Modal */}
-      <AnimatePresence>
-        {secretOpen && (
-          <motion.div
-            className="fixed inset-0 z-40 flex items-center justify-center bg-[#020617]/95 px-6 py-10"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="relative w-full max-w-4xl rounded-3xl border border-white/10 bg-[#0F172A]/90 p-6 text-left shadow-[0_0_60px_rgba(56,189,248,0.25)] sm:p-10"
-            >
-              <button
-                type="button"
-                onClick={() => setSecretOpen(false)}
-                className="absolute right-6 top-6 text-xs uppercase tracking-[0.3em] text-white/70 cursor-pointer"
+      <div className="absolute inset-0 flex flex-col">
+        <div className="pointer-events-none flex items-start justify-between px-5 pt-5 sm:px-8 sm:pt-7">
+          <div />
+          {audioReady && (
+            <MusicToggle
+              visible={elapsed > 8}
+              enabled={audioEnabled}
+              onClick={() => setAudioEnabled((current) => !current)}
+            />
+          )}
+        </div>
+
+        <div className="flex flex-1 items-center justify-center px-6">
+          <div className="relative flex w-full max-w-6xl flex-col items-center text-center">
+            <AnimatePresence>
+              {allowText && (
+                <motion.div
+                  key="story-intro"
+                  className="pointer-events-none space-y-4"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -16 }}
+                  transition={{ duration: 1.3, ease: "easeOut" }}
+                >
+                  {STORY_LINES.map((line) => (
+                    <motion.p
+                      key={line.id}
+                      className={`mx-auto max-w-4xl text-sm font-light uppercase tracking-[0.55em] text-white/74 sm:text-base ${
+                        line.id === "date" ? "text-white/86" : ""
+                      }`}
+                      initial={{ opacity: 0, y: 22 }}
+                      animate={
+                        elapsed > line.threshold
+                          ? { opacity: 1, y: 0 }
+                          : { opacity: 0, y: 22 }
+                      }
+                      transition={{ duration: 1.2, ease: "easeOut" }}
+                    >
+                      {line.text}
+                    </motion.p>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {showFinalReveal && (
+                <motion.div
+                  key="final-reveal"
+                  className="mt-10 flex w-full max-w-5xl flex-col items-center"
+                  initial={{ opacity: 0, y: 36 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 1.4, ease: "easeOut" }}
+                >
+                  <motion.p
+                    className="text-[11px] uppercase tracking-[0.8em] text-white/50 sm:text-xs"
+                    initial={{ opacity: 0 }}
+                    animate={elapsed > FINAL_LINES[0].threshold ? { opacity: 1 } : { opacity: 0 }}
+                    transition={{ duration: 0.9 }}
+                  >
+                    The Story Begins
+                  </motion.p>
+
+                  <motion.h1
+                    className="mt-5 text-4xl font-light tracking-[0.2em] text-white sm:text-6xl md:text-7xl lg:text-8xl"
+                    initial={{ opacity: 0, y: 24 }}
+                    animate={elapsed > FINAL_LINES[0].threshold ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
+                    transition={{ duration: 1.2, ease: "easeOut" }}
+                  >
+                    Happy Birthday
+                  </motion.h1>
+
+                  <motion.h2
+                    className="mt-4 bg-gradient-to-r from-[#f7fbff] via-[#d9efff] to-[#ffd7a8] bg-clip-text text-5xl font-light tracking-[0.28em] text-transparent sm:text-7xl md:text-8xl lg:text-[9rem]"
+                    initial={{ opacity: 0, y: 28 }}
+                    animate={elapsed > FINAL_LINES[1].threshold ? { opacity: 1, y: 0 } : { opacity: 0, y: 28 }}
+                    transition={{ duration: 1.35, ease: "easeOut" }}
+                  >
+                    Humaima
+                  </motion.h2>
+
+                  <motion.p
+                    className="mt-8 max-w-2xl text-sm leading-7 text-white/72 sm:text-base"
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={elapsed > FINAL_LINES[2].threshold ? { opacity: 1, y: 0 } : { opacity: 0, y: 18 }}
+                    transition={{ duration: 1.1, ease: "easeOut" }}
+                  >
+                    For the girl who turned a random message into my favorite story.
+                  </motion.p>
+
+                  <motion.p
+                    className="mt-5 text-3xl text-white/90"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={elapsed > FINAL_LINES[3].threshold ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.8, ease: "easeOut" }}
+                  >
+                    ✨
+                  </motion.p>
+
+                  <motion.p
+                    className="mt-2 text-sm uppercase tracking-[0.45em] text-white/62 sm:text-base"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={elapsed > FINAL_LINES[4].threshold ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                  >
+                    Every star ahead holds a memory.
+                  </motion.p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <div className="pointer-events-none relative z-20 flex min-h-[8rem] items-end justify-center px-6 pb-8 sm:pb-10">
+          <AnimatePresence>
+            {showCTA && (
+              <motion.div
+                key="cta"
+                className="pointer-events-auto flex flex-col items-center gap-3"
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 12 }}
+                transition={{ duration: 1.1, ease: "easeOut" }}
               >
-                Close
-              </button>
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <p className="text-xs uppercase tracking-[0.4em] text-white/70">
-                    Secret Chapter
-                  </p>
-                  <h2 className="text-2xl font-semibold sm:text-3xl">
-                    You found the hidden star.
-                  </h2>
-                </div>
-                <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
-                  <div className="space-y-4 rounded-2xl border border-white/10 bg-[#020617]/70 p-5 text-sm leading-7 text-white/80">
-                    <p className="font-semibold text-white">Private Letter</p>
-                    <p>
-                      Every moment with you feels like a new constellation forming. I
-                      wanted a secret place where only you could read this, so you can
-                      feel how deeply you are cherished.
-                    </p>
-                    <p>
-                      You are my calm in the chaos, my favorite story, and the reason
-                      this universe exists at all.
-                    </p>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-white/10 bg-[#020617]/70 p-5">
-                      <p className="mb-3 text-sm font-semibold text-white/90">
-                        Voice Note
-                      </p>
-                      <audio
-                        ref={audioRef}
-                        src="/audio/secret-message.mp3"
-                        preload="none"
-                        onError={() => {}}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSecretPlay}
-                        className="w-full rounded-full border border-transparent bg-[#38BDF8]/20 px-5 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-[0_0_25px_rgba(56,189,248,0.4)] cursor-pointer"
-                      >
-                        Play Secret Message ❤️
-                      </button>
-                    </div>
-                    <div className="overflow-hidden rounded-2xl border border-white/10">
-                      <img
-                        src="/images/humaima/secret.jpg"
-                        alt="A rare memory"
-                        className="h-52 w-full object-cover"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <p className="text-sm text-white/80">
-                  Which means you explored every corner of this universe. Thank you for
-                  being part of mine.
-                </p>
-              </div>
-            </motion.div>
+                <motion.button
+                  type="button"
+                  onClick={handleFollowTheStars}
+                  className="group relative flex h-20 w-20 items-center justify-center rounded-full border border-white/18 bg-white/[0.05] backdrop-blur-md transition hover:border-white/35"
+                  animate={{
+                    y: [0, -10, 0],
+                    boxShadow: [
+                      "0 0 28px rgba(108,194,255,0.18)",
+                      "0 0 48px rgba(108,194,255,0.32)",
+                      "0 0 28px rgba(108,194,255,0.18)",
+                    ],
+                  }}
+                  transition={{ duration: 4.2, repeat: Infinity, ease: "easeInOut" }}
+                >
+                  <div className="absolute inset-3 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.98)_0%,rgba(153,223,255,0.95)_28%,rgba(82,163,255,0.2)_72%,transparent_100%)]" />
+                  <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_180deg_at_50%_50%,rgba(255,255,255,0)_0deg,rgba(255,255,255,0.25)_120deg,rgba(255,255,255,0)_220deg)] opacity-0 transition group-hover:opacity-100" />
+                  <div className="relative h-4 w-4 rotate-45 bg-white shadow-[0_0_18px_rgba(255,255,255,0.85)]" />
+                </motion.button>
+
+                <motion.p
+                  className="text-[11px] uppercase tracking-[0.52em] text-white/72 sm:text-xs"
+                  animate={{ opacity: [0.62, 1, 0.62] }}
+                  transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut" }}
+                >
+                  Follow The Stars
+                </motion.p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        aria-label="Hidden star"
+        onClick={() => setSecretRevealed(true)}
+        className="absolute right-7 top-[24%] z-20 h-3 w-3 rounded-full bg-white/10 shadow-[0_0_14px_rgba(255,255,255,0.15)] transition hover:bg-white/30 hover:shadow-[0_0_18px_rgba(186,228,255,0.45)]"
+      />
+
+      <AnimatePresence>
+        {secretRevealed && (
+          <motion.div
+            className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-6"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 18 }}
+            transition={{ duration: 0.7, ease: "easeOut" }}
+          >
+            <div className="rounded-3xl border border-white/12 bg-[#071120]/75 px-6 py-4 text-center backdrop-blur-xl">
+              <p className="text-xs uppercase tracking-[0.35em] text-white/55">
+                Secret
+              </p>
+              <p className="mt-3 text-sm text-white/82 sm:text-base">
+                The brightest star was never in the sky.
+              </p>
+              <p className="mt-2 text-lg text-white/90">❤️</p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

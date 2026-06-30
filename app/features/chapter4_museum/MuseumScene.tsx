@@ -1,194 +1,88 @@
 "use client";
 
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Sparkles, Stars } from "@react-three/drei";
-import { useMemo, useRef } from "react";
-import * as THREE from "three";
-import { galleryImages, galleryZones } from "@/src/data/gallery";
-import type { GalleryImage } from "@/src/data/gallery";
-import FloatingFrame from "./FloatingFrame";
+import { motion, useTransform, type MotionValue } from "framer-motion";
 
-const THEME = {
-  background: "#020617",
-  accent: "#38BDF8",
-};
+const LIGHT_COLUMNS = [
+  { left: "18%" },
+  { left: "36%" },
+  { left: "50%" },
+  { left: "64%" },
+  { left: "82%" },
+];
+
+const STARS = [
+  { left: "10%", top: "8%", size: "h-1 w-1", opacity: "0.5" },
+  { left: "22%", top: "16%", size: "h-1 w-1", opacity: "0.35" },
+  { left: "78%", top: "12%", size: "h-1.5 w-1.5", opacity: "0.45" },
+  { left: "88%", top: "20%", size: "h-1 w-1", opacity: "0.35" },
+  { left: "14%", top: "34%", size: "h-1 w-1", opacity: "0.3" },
+  { left: "85%", top: "42%", size: "h-1 w-1", opacity: "0.32" },
+  { left: "26%", top: "68%", size: "h-1 w-1", opacity: "0.28" },
+  { left: "70%", top: "72%", size: "h-1.5 w-1.5", opacity: "0.4" },
+];
 
 type Props = {
-  scrollProgress: number;
-  selectedImage: GalleryImage | null;
-  onSelectImage: (image: GalleryImage) => void;
+  scrollProgress: MotionValue<number>;
 };
 
-function MuseumHall() {
-  const ringRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    if (ringRef.current) {
-      ringRef.current.rotation.y = state.clock.elapsedTime * 0.015;
-    }
-  });
+export default function MuseumScene({ scrollProgress }: Props) {
+  const atmosphereOpacity = useTransform(scrollProgress, [0, 0.5, 1], [0.4, 0.7, 0.48]);
+  const walkwayOpacity = useTransform(scrollProgress, [0, 0.3, 0.85, 1], [0.22, 0.4, 0.42, 0.28]);
+  const glowY = useTransform(scrollProgress, [0, 1], [24, -16]);
+  const wallOpacity = useTransform(scrollProgress, [0, 1], [0.72, 0.92]);
 
   return (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]}>
-        <circleGeometry args={[8, 64]} />
-        <meshStandardMaterial
-          color="#0F172A"
-          emissive={THEME.accent}
-          emissiveIntensity={0.04}
-          metalness={0.7}
-          roughness={0.35}
-        />
-      </mesh>
-
-      <mesh
-        ref={ringRef}
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -1.95, 0]}
-      >
-        <ringGeometry args={[7, 8.2, 64]} />
-        <meshBasicMaterial color={THEME.accent} transparent opacity={0.1} />
-      </mesh>
-
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.94, 0]}>
-        <ringGeometry args={[2.8, 3.2, 48]} />
-        <meshBasicMaterial color={THEME.accent} transparent opacity={0.06} />
-      </mesh>
-    </group>
-  );
-}
-
-function LightRays() {
-  const rays = useMemo(
-    () =>
-      Array.from({ length: 4 }, (_, i) => ({
-        id: i,
-        angle: (i / 4) * Math.PI * 2,
-        length: 10 + i * 1.5,
-      })),
-    [],
-  );
-
-  return (
-    <group position={[0, 4, 0]}>
-      {rays.map((ray) => (
-        <mesh key={ray.id} rotation={[0.25, ray.angle, 0]}>
-          <planeGeometry args={[0.35, ray.length]} />
-          <meshBasicMaterial
-            color={THEME.accent}
-            transparent
-            opacity={0.04}
-            side={THREE.DoubleSide}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function CameraRig({ scrollProgress }: { scrollProgress: number }) {
-  const { camera } = useThree();
-
-  const waypoints = useMemo(() => {
-    const entry = {
-      pos: new THREE.Vector3(0, 2.2, 9),
-      look: new THREE.Vector3(0, 1, 0),
-    };
-
-    const zones = galleryZones.map((zone) => ({
-      pos: new THREE.Vector3(
-        zone.focus[0] * 0.4,
-        zone.focus[1] + 0.6,
-        zone.focus[2] * 0.4 + 5.5,
-      ),
-      look: new THREE.Vector3(...zone.focus),
-    }));
-
-    return [entry, ...zones];
-  }, []);
-
-  useFrame(() => {
-    const total = waypoints.length - 1;
-    const scaled = Math.min(0.88, scrollProgress) * total;
-    const index = Math.min(Math.floor(scaled), total - 1);
-    const t = scaled - index;
-    const eased = t * t * (3 - 2 * t);
-
-    const from = waypoints[index];
-    const to = waypoints[Math.min(index + 1, total)];
-
-    camera.position.lerpVectors(from.pos, to.pos, eased);
-    const lookTarget = new THREE.Vector3().lerpVectors(
-      from.look,
-      to.look,
-      eased,
-    );
-    camera.lookAt(lookTarget);
-  });
-
-  return null;
-}
-
-function SceneContent({
-  scrollProgress,
-  selectedImage,
-  onSelectImage,
-}: Props) {
-  return (
-    <>
-      <color attach="background" args={[THEME.background]} />
-      <fog attach="fog" args={[THEME.background, 10, 24]} />
-
-      <ambientLight intensity={0.28} />
-      <pointLight position={[0, 5, 2]} intensity={1.1} color={THEME.accent} />
-      <pointLight position={[-4, 1, -2]} intensity={0.4} color="#7DD3FC" />
-
-      <Stars radius={45} depth={40} count={400} factor={2.5} fade speed={0.3} />
-      <Sparkles
-        count={25}
-        size={1.6}
-        color={THEME.accent}
-        speed={0.25}
-        scale={[12, 7, 12]}
-        opacity={0.35}
+    <div className="absolute inset-0 overflow-hidden rounded-[2.5rem]">
+      <motion.div
+        className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.16),transparent_38%),linear-gradient(180deg,rgba(3,7,18,0.94)_0%,rgba(2,6,23,0.98)_100%)]"
+        style={{ opacity: atmosphereOpacity }}
       />
 
-      <LightRays />
-      <MuseumHall />
+      <motion.div
+        className="absolute inset-y-0 left-0 w-[24%] bg-[linear-gradient(90deg,rgba(7,11,22,0.95),rgba(7,11,22,0.46),transparent)]"
+        style={{ opacity: wallOpacity }}
+      />
+      <motion.div
+        className="absolute inset-y-0 right-0 w-[24%] bg-[linear-gradient(270deg,rgba(7,11,22,0.95),rgba(7,11,22,0.46),transparent)]"
+        style={{ opacity: wallOpacity }}
+      />
 
-      {galleryImages.map((image) => (
-        <FloatingFrame
-          key={image.id}
-          image={image}
-          isSelected={selectedImage?.id === image.id}
-          onSelect={onSelectImage}
+      <div className="absolute inset-x-[10%] top-0 h-px bg-gradient-to-r from-transparent via-white/22 to-transparent" />
+      <div className="absolute inset-x-[18%] top-6 h-px bg-gradient-to-r from-transparent via-[#7DD3FC]/28 to-transparent" />
+
+      {LIGHT_COLUMNS.map((light) => (
+        <div
+          key={light.left}
+          className="pointer-events-none absolute top-0"
+          style={{ left: light.left }}
+        >
+          <div className="h-14 w-px bg-gradient-to-b from-[#dbeafe] via-[#7dd3fc]/75 to-transparent" />
+          <div className="ml-[-72px] h-28 w-36 bg-[linear-gradient(180deg,rgba(125,211,252,0.18),rgba(56,189,248,0.06)_32%,rgba(2,6,23,0)_100%)] blur-2xl" />
+        </div>
+      ))}
+
+      {STARS.map((star, index) => (
+        <div
+          key={index}
+          className={`absolute rounded-full bg-white ${star.size}`}
+          style={{ left: star.left, top: star.top, opacity: Number(star.opacity) }}
         />
       ))}
 
-      <CameraRig scrollProgress={scrollProgress} />
-    </>
-  );
-}
-
-export default function MuseumScene({
-  scrollProgress,
-  selectedImage,
-  onSelectImage,
-}: Props) {
-  return (
-    <Canvas
-      camera={{ position: [0, 2.2, 9], fov: 48 }}
-      className="absolute inset-0 touch-none"
-      dpr={[1, 1.25]}
-      gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
-    >
-      <SceneContent
-        scrollProgress={scrollProgress}
-        selectedImage={selectedImage}
-        onSelectImage={onSelectImage}
+      <motion.div
+        className="pointer-events-none absolute bottom-0 left-1/2 h-[84%] w-[76%] -translate-x-1/2 bg-[linear-gradient(180deg,rgba(56,189,248,0.04)_0%,rgba(56,189,248,0.02)_28%,rgba(2,6,23,0)_100%)]"
+        style={{
+          opacity: walkwayOpacity,
+          clipPath: "polygon(36% 0%, 64% 0%, 100% 100%, 0% 100%)",
+        }}
       />
-    </Canvas>
+
+      <motion.div
+        className="pointer-events-none absolute bottom-[-4%] left-1/2 h-[34%] w-[78%] -translate-x-1/2 rounded-[50%] bg-[radial-gradient(circle,rgba(14,165,233,0.16)_0%,rgba(14,165,233,0.05)_34%,rgba(2,6,23,0)_72%)] blur-[56px]"
+        style={{ y: glowY, opacity: 0.9 }}
+      />
+
+      <div className="pointer-events-none absolute inset-x-[14%] bottom-[8%] h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    </div>
   );
 }
