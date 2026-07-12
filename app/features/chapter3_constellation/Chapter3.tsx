@@ -33,7 +33,7 @@ const pathParticles = Array.from({ length: 14 }, (_, index) => ({
 
 export default function Chapter3() {
   const sectionRef = useRef<HTMLElement | null>(null);
-  const { setRef: setVisibleRef, visible } = useSectionVisible();
+  const { setRef: setVisibleRef, visible } = useSectionVisible("120% 0px");
   const [selected, setSelected] = useState<Memory | null>(null);
   const [secretRevealed, setSecretRevealed] = useState(false);
 
@@ -50,9 +50,11 @@ export default function Chapter3() {
     offset: ["start start", "end end"],
   });
 
-  const lineOneOpacity = useTransform(scrollYProgress, [0.72, 0.8], [0, 1]);
-  const lineTwoOpacity = useTransform(scrollYProgress, [0.8, 0.88], [0, 1]);
-  const pathOpacity = useTransform(scrollYProgress, [0.84, 0.94], [0, 1]);
+  const lineOneOpacity = useTransform(scrollYProgress, [0.34, 0.48], [0, 1]);
+  const lineTwoOpacity = useTransform(scrollYProgress, [0.48, 0.62], [0, 1]);
+  const pathOpacity = useTransform(scrollYProgress, [0.6, 0.8], [0, 1]);
+  const pathScaleY = useTransform(scrollYProgress, [0.62, 0.8], [0, 1]);
+  const pathLabelOpacity = useTransform(scrollYProgress, [0.72, 0.86], [0, 1]);
 
   const [pathProgress, setPathProgress] = useState(0);
   useMotionValueEvent(pathOpacity, "change", (value) => {
@@ -63,7 +65,7 @@ export default function Chapter3() {
     <section
       ref={mergedRef}
       id="chapter-3"
-      className="relative w-full overflow-hidden"
+      className="relative min-h-[152vh] w-full overflow-hidden sm:min-h-[158vh]"
       style={{
         background: theme.background,
         color: theme.text,
@@ -134,70 +136,63 @@ export default function Chapter3() {
         >
           Tap a star to explore
         </motion.p>
-      </div>
 
-      <div className="relative z-20 -mt-[35vh] flex min-h-[65vh] flex-col items-center justify-end px-6 pb-24 pt-[35vh]">
-        <motion.p
-          className="text-center text-sm uppercase tracking-[0.35em] text-white/70"
-          style={{ opacity: lineOneOpacity }}
-        >
-          Some memories shine brighter than others.
-        </motion.p>
-
-        <motion.p
-          className="mt-6 text-center text-sm uppercase tracking-[0.35em] text-white/70"
-          style={{ opacity: lineTwoOpacity }}
-        >
-          But every one of them matters.
-        </motion.p>
-
-        <motion.div
-          className="relative mt-16 flex h-48 w-full max-w-xs flex-col items-center"
-          style={{ opacity: pathOpacity }}
-        >
-          <div className="absolute top-0 h-px w-24 bg-gradient-to-r from-transparent via-[#38BDF8] to-transparent" />
-
-          {pathParticles.map((particle) => (
-            <motion.span
-              key={particle.id}
-              className="absolute h-1.5 w-1.5 rounded-full bg-[#38BDF8] shadow-[0_0_14px_rgba(56,189,248,0.9)]"
-              style={{
-                top: `${particle.id * 6}%`,
-                opacity: Math.max(0, pathProgress - particle.delay * 0.08),
-              }}
-              animate={{
-                y: [0, 8, 0],
-                scale: [1, 1.3, 1],
-                opacity: [0.4, 1, 0.4],
-              }}
-              transition={{
-                duration: 2.4 + particle.id * 0.15,
-                repeat: Infinity,
-                ease: "easeInOut",
-                delay: particle.delay,
-              }}
-            />
-          ))}
-
-          <motion.div
-            className="absolute bottom-0 h-24 w-px bg-gradient-to-b from-[#38BDF8]/80 via-[#38BDF8]/40 to-transparent"
-            initial={{ scaleY: 0 }}
-            whileInView={{ scaleY: 1 }}
-            viewport={{ once: true, amount: 0.6 }}
-            transition={{ duration: 1.4, ease: "easeOut" }}
-            style={{ transformOrigin: "top" }}
-          />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex min-h-[46vh] flex-col items-center justify-end px-6 pb-24 text-center">
+          <motion.p
+            className="text-sm uppercase tracking-[0.35em] text-white/70"
+            style={{ opacity: lineOneOpacity }}
+          >
+            Some memories shine brighter than others.
+          </motion.p>
 
           <motion.p
-            className="absolute -bottom-2 text-[10px] uppercase tracking-[0.45em] text-[#38BDF8]/60"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.6 }}
+            className="mt-6 text-sm uppercase tracking-[0.35em] text-white/70"
+            style={{ opacity: lineTwoOpacity }}
           >
-            Enter the museum
+            But every one of them matters.
           </motion.p>
-        </motion.div>
+
+          <motion.div
+            className="relative mt-16 flex h-48 w-full max-w-xs flex-col items-center"
+            style={{ opacity: pathOpacity }}
+          >
+            <div className="absolute top-0 h-px w-24 bg-gradient-to-r from-transparent via-[#38BDF8] to-transparent" />
+
+            {pathParticles.map((particle) => (
+              <motion.span
+                key={particle.id}
+                className="absolute h-1.5 w-1.5 rounded-full bg-[#38BDF8] shadow-[0_0_14px_rgba(56,189,248,0.9)]"
+                style={{
+                  top: `${particle.id * 6}%`,
+                  opacity: Math.max(0, pathProgress - particle.delay * 0.08),
+                }}
+                animate={{
+                  y: [0, 8, 0],
+                  scale: [1, 1.3, 1],
+                  opacity: [0.4, 1, 0.4],
+                }}
+                transition={{
+                  duration: 2.4 + particle.id * 0.15,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: particle.delay,
+                }}
+              />
+            ))}
+
+            <motion.div
+              className="absolute bottom-0 h-24 w-px bg-gradient-to-b from-[#38BDF8]/80 via-[#38BDF8]/40 to-transparent"
+              style={{ scaleY: pathScaleY, transformOrigin: "top" }}
+            />
+
+            <motion.p
+              className="absolute -bottom-2 text-[10px] uppercase tracking-[0.45em] text-[#38BDF8]/60"
+              style={{ opacity: pathLabelOpacity }}
+            >
+              Enter the museum
+            </motion.p>
+          </motion.div>
+        </div>
       </div>
 
       <MemoryModal memory={selected} onClose={() => setSelected(null)} />

@@ -1,15 +1,12 @@
 "use client";
 
 import { motion, useMotionValueEvent, useScroll } from "framer-motion";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import type { ReactNode } from "react";
 import { finaleMeta, finalePhases } from "@/src/data/finale";
 import { useSectionVisible } from "@/src/hooks/useSectionVisible";
-import EndScreen from "./EndScreen";
 import FinaleCanvas from "./FinaleCanvas";
 import FinaleLine from "./FinaleLine";
-import MusicToggle from "./MusicToggle";
-import SecretFinale from "./SecretFinale";
 
 function PhaseBlock({
   children,
@@ -52,8 +49,6 @@ export default function Chapter8() {
   const progressRef = useRef(0);
   const burstRef = useRef(0);
   const { setRef: setVisibleRef, visible } = useSectionVisible();
-  const [secretOpen, setSecretOpen] = useState(false);
-  const [showEndScreen, setShowEndScreen] = useState(false);
 
   const mergedRef = useCallback(
     (node: HTMLElement | null) => {
@@ -71,24 +66,6 @@ export default function Chapter8() {
   useMotionValueEvent(scrollYProgress, "change", (v) => {
     progressRef.current = v;
   });
-
-  const handleBurst = useCallback(() => {
-    burstRef.current = 1;
-  }, []);
-
-  const handleSecretComplete = useCallback(() => {
-    setSecretOpen(false);
-    setShowEndScreen(true);
-  }, []);
-
-  if (showEndScreen) {
-    return (
-      <>
-        <EndScreen />
-        <MusicToggle />
-      </>
-    );
-  }
 
   return (
     <section
@@ -173,27 +150,10 @@ export default function Chapter8() {
         </PhaseBlock>
 
         <PhaseBlock className="pointer-events-auto">
-          <motion.button
-            type="button"
-            className="rounded-full border border-[#38BDF8]/30 bg-[#38BDF8]/10 px-10 py-4 text-sm font-medium uppercase tracking-[0.3em] text-white shadow-[0_0_32px_rgba(56,189,248,0.15)] backdrop-blur-md transition hover:border-[#38BDF8]/50 hover:bg-[#38BDF8]/20"
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.5 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            onClick={() => setSecretOpen(true)}
-          >
-            {finalePhases.phase7.buttonLabel}
-          </motion.button>
+          <FinaleLine large>And then the night went quiet.</FinaleLine>
+          <FinaleLine delay={0.1}>The road ahead stayed open.</FinaleLine>
         </PhaseBlock>
       </div>
-
-      <SecretFinale
-        open={secretOpen}
-        onBurst={handleBurst}
-        onComplete={handleSecretComplete}
-      />
-
-      <MusicToggle />
     </section>
   );
 }

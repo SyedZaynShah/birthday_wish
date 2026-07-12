@@ -18,7 +18,6 @@ const theme = {
   accent: "#38BDF8",
   text: "#FFFFFF",
 };
-
 const ambientParticles = Array.from({ length: 14 }, (_, index) => ({
   id: index + 1,
   top: `${10 + (index * 6) % 76}%`,
@@ -149,7 +148,7 @@ export default function Chapter2() {
     mass: 0.35,
   });
 
-  const stage = useTransform(smoothProgress, [0, 0.08, 0.56, 1], [1, 1, 9.15, 9.15]);
+  const stage = useTransform(smoothProgress, [0, 0.06, 0.58, 1], [1, 1, 9.15, 9.15]);
   const [stageValue, setStageValue] = useState(1);
 
   useMotionValueEvent(stage, "change", (value) => {
@@ -157,38 +156,38 @@ export default function Chapter2() {
     setStageValue(Number(nextStage.toFixed(2)));
   });
 
-  const headerOpacity = useTransform(smoothProgress, [0, 0.14, 0.24], [1, 1, 0.18]);
+  const headerOpacity = useTransform(smoothProgress, [0, 0.12, 0.22], [1, 1, 0.16]);
   const headerY = useTransform(smoothProgress, [0, 1], [0, -18]);
-  const introOpacity = useTransform(smoothProgress, [0.04, 0.18, 0.3], [1, 1, 0]);
-  const introY = useTransform(smoothProgress, [0.04, 0.3], [0, -16]);
-  const phoneOpacity = useTransform(smoothProgress, [0, 0.72, 0.84, 1], [1, 1, 0.42, 0.06]);
-  const phoneScale = useTransform(smoothProgress, [0, 0.72, 0.84, 1], [1, 1, 0.96, 0.89]);
-  const phoneY = useTransform(smoothProgress, [0, 0.08, 0.72, 0.84, 1], [18, 0, 0, -18, -40]);
-  const phoneRotate = useTransform(smoothProgress, [0.76, 1], [0, -3]);
-  const raysOpacity = useTransform(smoothProgress, [0.03, 0.24, 0.72], [0.18, 0.62, 0.28]);
+  const introOpacity = useTransform(smoothProgress, [0.03, 0.16, 0.26], [1, 1, 0]);
+  const introY = useTransform(smoothProgress, [0.03, 0.26], [0, -16]);
+  const phoneOpacity = useTransform(smoothProgress, [0, 0.86, 0.95, 1], [1, 1, 0.36, 0.08]);
+  const phoneScale = useTransform(smoothProgress, [0, 0.86, 0.95, 1], [1, 1, 0.97, 0.9]);
+  const phoneY = useTransform(smoothProgress, [0, 0.06, 0.86, 0.95, 1], [18, 0, 0, -14, -28]);
+  const phoneRotate = useTransform(smoothProgress, [0.9, 1], [0, -3]);
+  const raysOpacity = useTransform(smoothProgress, [0.03, 0.22, 0.82], [0.18, 0.62, 0.3]);
 
-  const endingOpacity = useTransform(smoothProgress, [0.74, 0.8], [0, 1]);
-  const lineOneOpacity = useTransform(smoothProgress, [0.76, 0.82, 1], [0, 1, 1]);
-  const lineTwoOpacity = useTransform(smoothProgress, [0.82, 0.88, 1], [0, 1, 1]);
-  const lineThreeOpacity = useTransform(smoothProgress, [0.88, 0.94, 1], [0, 1, 1]);
-  const lineFourOpacity = useTransform(smoothProgress, [0.94, 0.985, 1], [0, 1, 1]);
-  const lineOneY = useTransform(smoothProgress, [0.76, 0.82], [20, 0]);
-  const lineTwoY = useTransform(smoothProgress, [0.82, 0.88], [20, 0]);
-  const lineThreeY = useTransform(smoothProgress, [0.88, 0.94], [20, 0]);
-  const lineFourY = useTransform(smoothProgress, [0.94, 0.985], [22, 0]);
+  const endingOpacity = useTransform(smoothProgress, [0.64, 0.7], [0, 1]);
+  const lineOneOpacity = useTransform(smoothProgress, [0.66, 0.72, 1], [0, 1, 1]);
+  const lineTwoOpacity = useTransform(smoothProgress, [0.72, 0.78, 1], [0, 1, 1]);
+  const lineThreeOpacity = useTransform(smoothProgress, [0.78, 0.84, 1], [0, 1, 1]);
+  const lineFourOpacity = useTransform(smoothProgress, [0.84, 0.9, 1], [0, 1, 1]);
+  const lineOneY = useTransform(smoothProgress, [0.66, 0.72], [20, 0]);
+  const lineTwoY = useTransform(smoothProgress, [0.72, 0.78], [20, 0]);
+  const lineThreeY = useTransform(smoothProgress, [0.78, 0.84], [20, 0]);
+  const lineFourY = useTransform(smoothProgress, [0.84, 0.9], [22, 0]);
 
-  const starsAwakenProgress = useTransform(smoothProgress, [0.94, 1], [0, 1]);
-  const heartFormationProgress = useTransform(smoothProgress, [0.952, 1], [0, 1]);
-  const heartGlowOpacity = useTransform(smoothProgress, [0.958, 1], [0, 0.9]);
-  const memoryTextOpacity = useTransform(smoothProgress, [0.968, 0.99, 1], [0, 1, 1]);
-  const bridgeProgress = useTransform(smoothProgress, [0.976, 1], [0, 1]);
-  const bridgeGlowOpacity = useTransform(smoothProgress, [0.982, 1], [0, 0.7]);
+  const starsAwakenProgress = useTransform(smoothProgress, [0.88, 0.98], [0, 1]);
+  const heartFormationProgress = useTransform(smoothProgress, [0.9, 0.985], [0, 1]);
+  const heartGlowOpacity = useTransform(smoothProgress, [0.92, 1], [0, 0.9]);
+  const memoryTextOpacity = useTransform(smoothProgress, [0.93, 0.97, 1], [0, 1, 1]);
+  const bridgeProgress = useTransform(smoothProgress, [0.95, 1], [0, 1]);
+  const bridgeGlowOpacity = useTransform(smoothProgress, [0.96, 1], [0, 0.7]);
 
   return (
     <section
       ref={sectionRef}
       id="chapter-2"
-      className="relative min-h-[280vh] w-full overflow-hidden sm:min-h-[300vh]"
+      className="relative min-h-[250vh] w-full overflow-hidden sm:min-h-[270vh]"
       style={{
         background: `radial-gradient(circle at 20% 20%, ${theme.primary} 0%, ${theme.background} 60%)`,
         color: theme.text,
