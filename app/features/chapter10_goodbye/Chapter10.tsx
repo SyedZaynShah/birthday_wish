@@ -340,7 +340,56 @@ export default function Chapter10() {
         {/* Final cursor */}
         <TinyCursor />
 
+        <Spacer height="150vh" />
+
+        {/* Lesson learned */}
+        <div className="flex min-h-[100vh] items-center justify-center">
+          <TextMoment tiny>Some of the most beautiful stories</TextMoment>
+        </div>
+
         <Spacer height="100vh" />
+
+        <div className="flex min-h-[100vh] items-center justify-center">
+          <TextMoment tiny>begin with a stranger&apos;s message.</TextMoment>
+        </div>
+
+        <Spacer height="100vh" />
+
+        <div className="flex min-h-[100vh] items-center justify-center">
+          <TextMoment tiny>And sometimes...</TextMoment>
+        </div>
+
+        <Spacer height="100vh" />
+
+        <div className="flex min-h-[100vh] items-center justify-center">
+          <TextMoment tiny>the most painful lessons</TextMoment>
+        </div>
+
+        <Spacer height="100vh" />
+
+        <div className="flex min-h-[100vh] items-center justify-center">
+          <TextMoment tiny>come from the same place.</TextMoment>
+        </div>
+
+        <Spacer height="120vh" />
+
+        <div className="flex min-h-[100vh] items-center justify-center">
+          <TextMoment tiny>But I wouldn&apos;t change a thing.</TextMoment>
+        </div>
+
+        <Spacer height="100vh" />
+
+        <div className="flex min-h-[100vh] items-center justify-center">
+          <TextMoment tiny>Because that message...</TextMoment>
+        </div>
+
+        <Spacer height="100vh" />
+
+        <div className="flex min-h-[100vh] items-center justify-center">
+          <TextMoment tiny>led me to you.</TextMoment>
+        </div>
+
+        <Spacer height="200vh" />
       </div>
     </section>
   );
